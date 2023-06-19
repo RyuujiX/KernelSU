@@ -39,7 +39,6 @@ import me.weishu.kernelsu.ui.screen.destinations.InstallScreenDestination
 import me.weishu.kernelsu.ui.util.*
 import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Destination
 @Composable
 fun ModuleScreen(navigator: DestinationsNavigator) {
@@ -51,11 +50,10 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
         }
     }
 
-    val isSafeMode = Natives.isSafeMode()
-    val isKSUVersionInvalid = Natives.getVersion() < 0
+    val isSafeMode = Natives.isSafeMode
     val hasMagisk = hasMagisk()
 
-    val hideInstallButton = isSafeMode || isKSUVersionInvalid || hasMagisk
+    val hideInstallButton = isSafeMode || hasMagisk
 
     Scaffold(topBar = {
         TopBar()
@@ -94,11 +92,6 @@ fun ModuleScreen(navigator: DestinationsNavigator) {
         ConfirmDialog()
 
         when {
-            isKSUVersionInvalid -> {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(stringResource(R.string.require_kernel_version_8))
-                }
-            }
             hasMagisk -> {
                 Box(
                     modifier = Modifier
