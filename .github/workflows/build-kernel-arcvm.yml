@@ -59,10 +59,9 @@ jobs:
           sudo ln -s --force /usr/bin/clang++-$LLVM_VERSION /usr/bin/clang++
 
       - name: Checkout KernelSU
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: KernelSU
-          ref: main
           fetch-depth: 0
 
       - name: Setup kernel source
@@ -98,6 +97,10 @@ jobs:
         run: |
           set -a && . build.config.gki.x86_64; set +a
           export DEFCONFIG=x86_64_arcvm_defconfig
+          if [ ! -z ${{ vars.EXPECTED_SIZE }} ] && [ ! -z ${{ vars.EXPECTED_HASH }} ]; then
+            export KSU_EXPECTED_SIZE=${{ vars.EXPECTED_SIZE }}
+            export KSU_EXPECTED_HASH=${{ vars.EXPECTED_HASH }}
+          fi
 
           make LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc O=${PWD} mrproper
           make LLVM=1 LLVM_IAS=1 DEPMOD=depmod DTC=dtc O=${PWD} ${DEFCONFIG} < /dev/null
@@ -112,11 +115,18 @@ jobs:
           name: kernel-ARCVM-${{ matrix.arch }}-${{ matrix.version }}
           path: "${{ env.file_path }}"
 
+      - name: Bot session cache
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.ref_type == 'tag' }}
+        id: bot_session_cache
+        uses: actions/cache@v3
+        with:
+          path: scripts/ksubot.session
+          key: ${{ runner.os }}-bot-session
+
       - name: Post to Telegram
         if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/main' ) || github.ref_type == 'tag' }}
         env:
           CHAT_ID: ${{ secrets.CHAT_ID }}
-          CACHE_CHAT_ID: ${{ secrets.CACHE_CHAT_ID }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           MESSAGE_THREAD_ID: ${{ secrets.MESSAGE_THREAD_ID }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
@@ -132,6 +142,6 @@ jobs:
           echo "[+] Image to upload"
           ls -l "${{ env.file_path }}.gz"
           if [ -n "${{ secrets.BOT_TOKEN }}" ]; then
-            pip3 install python-telegram-bot
+            pip3 install telethon==1.31.1
             python3 "$GITHUB_WORKSPACE/KernelSU/scripts/ksubot.py" "${{ env.file_path }}.gz"
           fi

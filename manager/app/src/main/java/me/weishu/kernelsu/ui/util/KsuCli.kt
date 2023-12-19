@@ -9,7 +9,6 @@ import com.topjohnwu.superuser.ShellUtils
 import me.weishu.kernelsu.BuildConfig
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.ksuApp
-import me.weishu.kernelsu.ui.viewmodel.ModuleViewModel
 import org.json.JSONArray
 import java.io.File
 
@@ -92,7 +91,12 @@ fun uninstallModule(id: String): Boolean {
     return result
 }
 
-fun installModule(uri: Uri, onFinish: (Boolean) -> Unit, onOutput: (String) -> Unit): Boolean {
+fun installModule(
+    uri: Uri,
+    onFinish: (Boolean) -> Unit,
+    onStdout: (String) -> Unit,
+    onStderr: (String) -> Unit
+): Boolean {
     val resolver = ksuApp.contentResolver
     with(resolver.openInputStream(uri)) {
         val file = File(ksuApp.cacheDir, "module.zip")
@@ -103,14 +107,21 @@ fun installModule(uri: Uri, onFinish: (Boolean) -> Unit, onOutput: (String) -> U
 
         val shell = getRootShell()
 
-        val callbackList: CallbackList<String?> = object : CallbackList<String?>() {
+        val stdoutCallback: CallbackList<String?> = object : CallbackList<String?>() {
             override fun onAddElement(s: String?) {
-                onOutput(s ?: "")
+                onStdout(s ?: "")
+            }
+        }
+
+        val stderrCallback: CallbackList<String?> = object : CallbackList<String?>() {
+            override fun onAddElement(s: String?) {
+                onStderr(s ?: "")
             }
         }
 
         val result =
-            shell.newJob().add("${getKsuDaemonPath()} $cmd").to(callbackList, callbackList).exec()
+            shell.newJob().add("${getKsuDaemonPath()} $cmd").to(stdoutCallback, stderrCallback)
+                .exec()
         Log.i("KernelSU", "install module $uri result: $result")
 
         file.delete()
@@ -148,6 +159,71 @@ fun isSepolicyValid(rules: String?): Boolean {
     }
     val shell = getRootShell()
     val result =
-        shell.newJob().add("ksud sepolicy check '$rules'").to(ArrayList(), null).exec()
+        shell.newJob().add("${getKsuDaemonPath()} sepolicy check '$rules'").to(ArrayList(), null)
+            .exec()
     return result.isSuccess
+}
+
+fun getSepolicy(pkg: String): String {
+    val shell = getRootShell()
+    val result =
+        shell.newJob().add("${getKsuDaemonPath()} profile get-sepolicy $pkg").to(ArrayList(), null)
+            .exec()
+    Log.i(TAG, "code: ${result.code}, out: ${result.out}, err: ${result.err}")
+    return result.out.joinToString("\n")
+}
+
+fun setSepolicy(pkg: String, rules: String): Boolean {
+    val shell = getRootShell()
+    val result =
+        shell.newJob().add("${getKsuDaemonPath()} profile set-sepolicy $pkg '$rules'")
+            .to(ArrayList(), null).exec()
+    Log.i(TAG, "set sepolicy result: ${result.code}")
+    return result.isSuccess
+}
+
+fun listAppProfileTemplates(): List<String> {
+    val shell = getRootShell()
+    return shell.newJob().add("${getKsuDaemonPath()} profile list-templates").to(ArrayList(), null)
+        .exec().out
+}
+
+fun getAppProfileTemplate(id: String): String {
+    val shell = getRootShell()
+    return shell.newJob().add("${getKsuDaemonPath()} profile get-template '${id}'")
+        .to(ArrayList(), null)
+        .exec().out.joinToString("\n")
+}
+
+fun setAppProfileTemplate(id: String, template: String): Boolean {
+    val shell = getRootShell()
+    return shell.newJob().add("${getKsuDaemonPath()} profile set-template '${id}' '${template}'")
+        .to(ArrayList(), null)
+        .exec().isSuccess
+}
+
+fun deleteAppProfileTemplate(id: String): Boolean {
+    val shell = getRootShell()
+    return shell.newJob().add("${getKsuDaemonPath()} profile delete-template '${id}'")
+        .to(ArrayList(), null)
+        .exec().isSuccess
+}
+
+fun forceStopApp(packageName: String) {
+    val shell = getRootShell()
+    val result = shell.newJob().add("am force-stop $packageName").exec()
+    Log.i(TAG, "force stop $packageName result: $result")
+}
+
+fun launchApp(packageName: String) {
+
+    val shell = getRootShell()
+    val result =
+        shell.newJob().add("monkey -p $packageName -c android.intent.category.LAUNCHER 1").exec()
+    Log.i(TAG, "launch $packageName result: $result")
+}
+
+fun restartApp(packageName: String) {
+    forceStopApp(packageName)
+    launchApp(packageName)
 }

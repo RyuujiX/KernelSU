@@ -36,7 +36,6 @@ export default defineConfig({
 function nav() {
   return [
     { text: '指南', link: '/zh_CN/guide/what-is-kernelsu' },
-    { text: 'Github', link: 'https://github.com/tiann/KernelSU' }
   ]
 }
 
@@ -51,6 +50,7 @@ function sidebarGuide() {
           { text: '如何为非GKI设备集成 KernelSU', link: '/zh_CN/guide/how-to-integrate-for-non-gki'},
           { text: '非官方支持设备', link: '/zh_CN/guide/unofficially-support-devices.md' },
           { text: '模块开发指南', link: '/zh_CN/guide/module.md' },
+          { text: 'App Profile', link: '/zh_CN/guide/app-profile.md' },
           { text: '救砖', link: '/zh_CN/guide/rescue-from-bootloop.md' },
           { text: '常见问题', link: '/zh_CN/guide/faq' },
           { text: '隐藏功能', link: '/zh_CN/guide/hidden-features' },

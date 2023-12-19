@@ -1,19 +1,19 @@
-# How to integrate KernelSU for non GKI kernel?
+# How to integrate KernelSU for non GKI kernels?
 
-KernelSU can be integrate to non GKI kernel, and it is backported to 4.14 now, it is also possible to run on kernel below 4.14.
+KernelSU can be integrated into non GKI kernels, and was backported to 4.14 and below.
 
-Since the fragmentization of non GKI kernels, we don't have a uniform way to build it, so we can not provide non GKI boot images. But you can build the kernel yourself with KernelSU integrated.
+Due to the fragmentization of non GKI kernels, we do not have a uniform way to build it, so we can not provide non GKI boot images. But you can build the kernel yourself with KernelSU integrated.
 
-First, you should be able to build a bootable kernel from kernel source code, if the kernel is not open sourced, then it is difficult to run KernelSU for your device.
+First, you should be able to build a bootable kernel from kernel source code. If the kernel is not open source, then it is difficult to run KernelSU for your device.
 
 If you can build a bootable kernel, there are two ways to integrate KernelSU to the kernel source code:
 
 1. Automatically with `kprobe`
-2. Manully
+2. Manually
 
 ## Integrate with kprobe
 
-KernelSU use kprobe to do kernel hooks, if the *kprobe* runs well in your kernel, it is recommended to use this way.
+KernelSU uses kprobe to do kernel hooks, if the *kprobe* runs well in your kernel, it is recommended to use this way.
 
 First, add KernelSU to your kernel source tree:
 
@@ -40,33 +40,33 @@ But if you encounter a boot loop when integrated KernelSU, it is maybe *kprobe i
 comment out `ksu_enable_sucompat()` and `ksu_enable_ksud()` in `KernelSU/kernel/ksu.c`, if the device boots normally, then kprobe may be broken.
 :::
 
-## Manully modify the kernel source
+## Manually modify the kernel source
 
-If kprobe can not work in your kernel (maybe a upstream bug or kernel below 4.8), then you can try this way:
+If kprobe does not work in your kernel (may be an upstream or kernel bug below 4.8), then you can try this way:
 
 First, add KernelSU to your kernel source tree:
 
-- Latest tag(stable)
+::: code-group
 
-```sh
+```sh[Latest tag(stable)]
 curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
 ```
 
-- main branch(dev)
-
-```sh
+```sh[ main branch(dev)]
 curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 ```
 
-- Select tag(Such as v0.5.2)
-
-```sh
+```sh[Select tag(Such as v0.5.2)]
 curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.5.2
 ```
 
+:::
+
 Then, add KernelSU calls to the kernel source, here is a patch to refer:
 
-```diff
+::: code-group
+
+```diff[exec.c]
 diff --git a/fs/exec.c b/fs/exec.c
 index ac59664eaecf..bdd585e1d2cc 100644
 --- a/fs/exec.c
@@ -91,7 +91,8 @@ index ac59664eaecf..bdd585e1d2cc 100644
 +		ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
  	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
  }
- 
+```
+```diff[open.c]
 diff --git a/fs/open.c b/fs/open.c
 index 05036d819197..965b84d486b8 100644
 --- a/fs/open.c
@@ -109,10 +110,20 @@ index 05036d819197..965b84d486b8 100644
   */
  long do_faccessat(int dfd, const char __user *filename, int mode)
  {
-+	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
  	const struct cred *old_cred;
  	struct cred *override_cred;
  	struct path path;
+ 	struct inode *inode;
+ 	struct vfsmount *mnt;
+ 	int res;
+ 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+ 
++	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
+ 
+ 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
+ 		return -EINVAL;
+```
+```diff[read_write.c]
 diff --git a/fs/read_write.c b/fs/read_write.c
 index 650fc7e0f3a6..55be193913b6 100644
 --- a/fs/read_write.c
@@ -134,6 +145,8 @@ index 650fc7e0f3a6..55be193913b6 100644
  	if (!(file->f_mode & FMODE_READ))
  		return -EBADF;
  	if (!(file->f_mode & FMODE_CAN_READ))
+```
+```diff[stat.c]
 diff --git a/fs/stat.c b/fs/stat.c
 index 376543199b5a..82adcef03ecc 100644
 --- a/fs/stat.c
@@ -157,7 +170,9 @@ index 376543199b5a..82adcef03ecc 100644
  		return -EINVAL;
 ```
 
-You should found the four functions in kernel source:
+:::
+
+You should find the four functions in kernel source:
 
 1. do_faccessat, usually in `fs/open.c`
 2. do_execveat_common, usually in `fs/exec.c`
@@ -221,7 +236,7 @@ index 2ff887661237..e758d7db7663 100644
 To enable KernelSU's builtin SafeMode, You should also modify `input_handle_event` in `drivers/input/input.c`:
 
 :::tip
-It is strongly recommended to enable this feature, it is very helpful for recusing from bootloop!
+It is strongly recommended to enable this feature, it is very helpful to prevent bootloops!
 :::
 
 ```diff
@@ -248,4 +263,8 @@ index 45306f9ef247..815091ebfca4 100755
  		add_input_randomness(type, code, value);
 ```
 
-Finally, build your kernel again, KernelSU should works well.
+Finally, build your kernel again, KernelSU should work well.
+
+:::info Entering safe mode accidiently?
+If you use manual integration and do not disable `CONFIG_KPROBES`, then the user may trigger safe mode by pressing the volume down button after booting! Therefore if using manual integration you need to disable `CONFIG_KPROBES`!
+:::

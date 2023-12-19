@@ -97,7 +97,7 @@ void ksu_show_allow_list(void)
 {
 	struct perm_data *p = NULL;
 	struct list_head *pos = NULL;
-	pr_info("ksu_show_allow_list");
+	pr_info("ksu_show_allow_list\n");
 	list_for_each (pos, &allow_list) {
 		p = list_entry(pos, struct perm_data, list);
 		pr_info("uid :%d, allow: %d\n", p->profile.current_uid,
@@ -349,10 +349,9 @@ void do_save_allow_list(struct work_struct *work)
 	struct perm_data *p = NULL;
 	struct list_head *pos = NULL;
 	loff_t off = 0;
-	KWORKER_INSTALL_KEYRING();
-	struct file *fp =
-		filp_open(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT, 0644);
 
+	struct file *fp =
+		ksu_filp_open_compat(KERNEL_SU_ALLOWLIST, O_WRONLY | O_CREAT, 0644);
 	if (IS_ERR(fp)) {
 		pr_err("save_allow_list create file failed: %ld\n", PTR_ERR(fp));
 		return;
@@ -392,15 +391,14 @@ void do_load_allow_list(struct work_struct *work)
 	struct file *fp = NULL;
 	u32 magic;
 	u32 version;
-	KWORKER_INSTALL_KEYRING();
 
 #ifdef CONFIG_KSU_DEBUG
 	// always allow adb shell by default
 	ksu_grant_root_to_shell();
 #endif
-	// load allowlist now!
-	fp = filp_open(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
 
+	// load allowlist now!
+	fp = ksu_filp_open_compat(KERNEL_SU_ALLOWLIST, O_RDONLY, 0);
 	if (IS_ERR(fp)) {
 		pr_err("load_allow_list open file failed: %ld\n", PTR_ERR(fp));
 		return;
@@ -443,7 +441,7 @@ exit:
 	filp_close(fp, 0);
 }
 
-void ksu_prune_allowlist(bool (*is_uid_exist)(uid_t, void *), void *data)
+void ksu_prune_allowlist(bool (*is_uid_valid)(uid_t, char *, void *), void *data)
 {
 	struct perm_data *np = NULL;
 	struct perm_data *n = NULL;
@@ -453,11 +451,12 @@ void ksu_prune_allowlist(bool (*is_uid_exist)(uid_t, void *), void *data)
 	mutex_lock(&allowlist_mutex);
 	list_for_each_entry_safe (np, n, &allow_list, list) {
 		uid_t uid = np->profile.current_uid;
+		char *package = np->profile.key;
 		// we use this uid for special cases, don't prune it!
 		bool is_preserved_uid = uid == KSU_APP_PROFILE_PRESERVE_UID;
-		if (!is_preserved_uid && !is_uid_exist(uid, data)) {
+		if (!is_preserved_uid && !is_uid_valid(uid, package, data)) {
 			modified = true;
-			pr_info("prune uid: %d\n", uid);
+			pr_info("prune uid: %d, package: %s\n", uid, package);
 			list_del(&np->list);
 			allow_list_bitmap[uid / BITS_PER_BYTE] &= ~(1 << (uid % BITS_PER_BYTE));
 			remove_uid_from_arr(uid);

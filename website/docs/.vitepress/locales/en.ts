@@ -36,7 +36,6 @@ export default defineConfig({
 function nav() {
   return [
     { text: 'Guide', link: '/guide/what-is-kernelsu' },
-    { text: 'Github', link: 'https://github.com/tiann/KernelSU' }
   ]
 }
 
@@ -46,11 +45,13 @@ function sidebarGuide() {
         text: 'Guide',
         items: [
           { text: 'What is KernelSU?', link: '/guide/what-is-kernelsu' },
+          { text: 'Difference with Magisk', link: '/guide/difference-with-magisk' },
           { text: 'Installation', link: '/guide/installation' },
           { text: 'How to build?', link: '/guide/how-to-build' },
           { text: 'Intergrate for non-GKI devices', link: '/guide/how-to-integrate-for-non-gki'},
           { text: 'Unofficially supported devices', link: '/guide/unofficially-support-devices.md' },
           { text: 'Module Guide', link: '/guide/module.md' },
+          { text: 'App Profile', link: '/guide/app-profile.md' },
           { text: 'Rescue from bootloop', link: '/guide/rescue-from-bootloop.md' },
           { text: 'FAQ', link: '/guide/faq' },
           { text: 'Hidden features', link: '/guide/hidden-features' },

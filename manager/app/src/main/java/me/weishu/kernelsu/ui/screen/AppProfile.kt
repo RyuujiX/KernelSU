@@ -1,11 +1,13 @@
 package me.weishu.kernelsu.ui.screen
 
-import android.util.Log
 import androidx.annotation.StringRes
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -16,17 +18,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Android
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.ArrowDropUp
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -38,10 +38,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
@@ -53,8 +57,17 @@ import me.weishu.kernelsu.R
 import me.weishu.kernelsu.ui.component.SwitchItem
 import me.weishu.kernelsu.ui.component.profile.AppProfileConfig
 import me.weishu.kernelsu.ui.component.profile.RootProfileConfig
+import me.weishu.kernelsu.ui.component.profile.TemplateConfig
+import me.weishu.kernelsu.ui.screen.destinations.AppProfileTemplateScreenDestination
+import me.weishu.kernelsu.ui.screen.destinations.TemplateEditorScreenDestination
 import me.weishu.kernelsu.ui.util.LocalSnackbarHost
+import me.weishu.kernelsu.ui.util.forceStopApp
+import me.weishu.kernelsu.ui.util.getSepolicy
+import me.weishu.kernelsu.ui.util.launchApp
+import me.weishu.kernelsu.ui.util.restartApp
+import me.weishu.kernelsu.ui.util.setSepolicy
 import me.weishu.kernelsu.ui.viewmodel.SuperUserViewModel
+import me.weishu.kernelsu.ui.viewmodel.getTemplateInfoById
 
 /**
  * @author weishu
@@ -71,16 +84,20 @@ fun AppProfileScreen(
     val scope = rememberCoroutineScope()
     val failToUpdateAppProfile =
         stringResource(R.string.failed_to_update_app_profile).format(appInfo.label)
+    val failToUpdateSepolicy =
+        stringResource(R.string.failed_to_update_sepolicy).format(appInfo.label)
 
     val packageName = appInfo.packageName
+    val initialProfile = Natives.getAppProfile(packageName, appInfo.uid)
+    if (initialProfile.allowSu) {
+        initialProfile.rules = getSepolicy(packageName)
+    }
     var profile by rememberSaveable {
-        mutableStateOf(Natives.getAppProfile(packageName, appInfo.uid))
+        mutableStateOf(initialProfile)
     }
 
-    Log.i("mylog", "profile: $profile")
-
     Scaffold(
-        topBar = { TopBar { navigator.popBackStack() } }
+        topBar = { TopBar { navigator.popBackStack() } },
     ) { paddingValues ->
         AppProfileInner(
             modifier = Modifier
@@ -90,9 +107,7 @@ fun AppProfileScreen(
             appLabel = appInfo.label,
             appIcon = {
                 AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(appInfo.packageInfo)
-                        .crossfade(true)
+                    model = ImageRequest.Builder(context).data(appInfo.packageInfo).crossfade(true)
                         .build(),
                     contentDescription = appInfo.label,
                     modifier = Modifier
@@ -102,8 +117,22 @@ fun AppProfileScreen(
                 )
             },
             profile = profile,
+            onViewTemplate = {
+                getTemplateInfoById(it)?.let { info ->
+                    navigator.navigate(TemplateEditorScreenDestination(info))
+                }
+            },
+            onManageTemplate = {
+                navigator.navigate(AppProfileTemplateScreenDestination())
+            },
             onProfileChange = {
                 scope.launch {
+                    if (it.allowSu && !it.rootUseDefault && it.rules.isNotEmpty()) {
+                        if (!setSepolicy(profile.name, it.rules)) {
+                            snackbarHost.showSnackbar(failToUpdateSepolicy)
+                            return@launch
+                        }
+                    }
                     if (!Natives.setAppProfile(it)) {
                         snackbarHost.showSnackbar(failToUpdateAppProfile.format(appInfo.uid))
                     } else {
@@ -115,7 +144,6 @@ fun AppProfileScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppProfileInner(
     modifier: Modifier = Modifier,
@@ -123,16 +151,20 @@ private fun AppProfileInner(
     appLabel: String,
     appIcon: @Composable () -> Unit,
     profile: Natives.Profile,
+    onViewTemplate: (id: String) -> Unit = {},
+    onManageTemplate: () -> Unit = {},
     onProfileChange: (Natives.Profile) -> Unit,
 ) {
     val isRootGranted = profile.allowSu
 
     Column(modifier = modifier) {
-        ListItem(
-            headlineContent = { Text(appLabel) },
-            supportingContent = { Text(packageName) },
-            leadingContent = appIcon,
-        )
+        AppMenuBox(packageName) {
+            ListItem(
+                headlineContent = { Text(appLabel) },
+                supportingContent = { Text(packageName) },
+                leadingContent = appIcon,
+            )
+        }
 
         SwitchItem(
             icon = Icons.Filled.Security,
@@ -154,7 +186,7 @@ private fun AppProfileInner(
                     var mode by remember {
                         mutableStateOf(initialMode)
                     }
-                    ProfileBox(mode, false) {
+                    ProfileBox(mode, true) {
                         // template mode shouldn't change profile here!
                         if (it == Mode.Default || it == Mode.Custom) {
                             onProfileChange(profile.copy(rootUseDefault = it == Mode.Default))
@@ -163,43 +195,12 @@ private fun AppProfileInner(
                     }
                     Crossfade(targetState = mode, label = "") { currentMode ->
                         if (currentMode == Mode.Template) {
-                            var expanded by remember { mutableStateOf(false) }
-                            val templateNone = "None"
-                            var template by rememberSaveable {
-                                mutableStateOf(
-                                    profile.rootTemplate
-                                        ?: templateNone
-                                )
-                            }
-                            ListItem(headlineContent = {
-                                ExposedDropdownMenuBox(
-                                    expanded = expanded,
-                                    onExpandedChange = { expanded = it },
-                                ) {
-                                    OutlinedTextField(
-                                        modifier = Modifier.menuAnchor(),
-                                        readOnly = true,
-                                        label = { Text(stringResource(R.string.profile_template)) },
-                                        value = template,
-                                        onValueChange = {
-                                            if (template != templateNone) {
-                                                onProfileChange(
-                                                    profile.copy(
-                                                        rootTemplate = it,
-                                                        rootUseDefault = false
-                                                    )
-                                                )
-                                                template = it
-                                            }
-                                        },
-                                        trailingIcon = {
-                                            if (expanded) Icon(Icons.Filled.ArrowDropUp, null)
-                                            else Icon(Icons.Filled.ArrowDropDown, null)
-                                        },
-                                    )
-                                    // TODO: Template
-                                }
-                            })
+                            TemplateConfig(
+                                profile = profile,
+                                onViewTemplate = onViewTemplate,
+                                onManageTemplate = onManageTemplate,
+                                onProfileChange = onProfileChange
+                            )
                         } else if (mode == Mode.Custom) {
                             RootProfileConfig(
                                 fixedName = true,
@@ -229,9 +230,7 @@ private fun AppProfileInner(
 }
 
 private enum class Mode(@StringRes private val res: Int) {
-    Default(R.string.profile_default),
-    Template(R.string.profile_template),
-    Custom(R.string.profile_custom);
+    Default(R.string.profile_default), Template(R.string.profile_template), Custom(R.string.profile_custom);
 
     val text: String
         @Composable get() = stringResource(res)
@@ -267,8 +266,7 @@ private fun ProfileBox(
     Divider(thickness = Dp.Hairline)
     ListItem(headlineContent = {
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
+            modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             FilterChip(
                 selected = mode == Mode.Default,
@@ -289,6 +287,63 @@ private fun ProfileBox(
             )
         }
     })
+}
+
+@Composable
+private fun AppMenuBox(packageName: String, content: @Composable () -> Unit) {
+
+    var expanded by remember { mutableStateOf(false) }
+    var touchPoint: Offset by remember { mutableStateOf(Offset.Zero) }
+    val density = LocalDensity.current
+
+    BoxWithConstraints(
+        Modifier
+            .fillMaxSize()
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    touchPoint = it
+                    expanded = true
+                }
+            }) {
+
+        content()
+
+        val (offsetX, offsetY) = with(density) {
+            (touchPoint.x.toDp()) to (touchPoint.y.toDp())
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            offset = DpOffset(offsetX, -offsetY),
+            onDismissRequest = {
+                expanded = false
+            },
+        ) {
+            DropdownMenuItem(
+                text = { Text(stringResource(id = R.string.launch_app)) },
+                onClick = {
+                    expanded = false
+                    launchApp(packageName)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(id = R.string.force_stop_app)) },
+                onClick = {
+                    expanded = false
+                    forceStopApp(packageName)
+                },
+            )
+            DropdownMenuItem(
+                text = { Text(stringResource(id = R.string.restart_app)) },
+                onClick = {
+                    expanded = false
+                    restartApp(packageName)
+                },
+            )
+        }
+    }
+
+
 }
 
 @Preview

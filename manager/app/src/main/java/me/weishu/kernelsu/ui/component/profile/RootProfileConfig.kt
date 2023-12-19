@@ -74,9 +74,9 @@ fun RootProfileConfig(
 
         var expanded by remember { mutableStateOf(false) }
         val currentNamespace = when (profile.namespace) {
-            Natives.Profile.Namespace.Inherited.ordinal -> stringResource(R.string.profile_namespace_inherited)
-            Natives.Profile.Namespace.Global.ordinal -> stringResource(R.string.profile_namespace_global)
-            Natives.Profile.Namespace.Individual.ordinal -> stringResource(R.string.profile_namespace_individual)
+            Natives.Profile.Namespace.INHERITED.ordinal -> stringResource(R.string.profile_namespace_inherited)
+            Natives.Profile.Namespace.GLOBAL.ordinal -> stringResource(R.string.profile_namespace_global)
+            Natives.Profile.Namespace.INDIVIDUAL.ordinal -> stringResource(R.string.profile_namespace_individual)
             else -> stringResource(R.string.profile_namespace_inherited)
         }
         ListItem(headlineContent = {
@@ -104,21 +104,21 @@ fun RootProfileConfig(
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.profile_namespace_inherited)) },
                         onClick = {
-                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.Inherited.ordinal))
+                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.INHERITED.ordinal))
                             expanded = false
                         },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.profile_namespace_global)) },
                         onClick = {
-                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.Global.ordinal))
+                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.GLOBAL.ordinal))
                             expanded = false
                         },
                     )
                     DropdownMenuItem(
                         text = { Text(stringResource(R.string.profile_namespace_individual)) },
                         onClick = {
-                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.Individual.ordinal))
+                            onProfileChange(profile.copy(namespace = Natives.Profile.Namespace.INDIVIDUAL.ordinal))
                             expanded = false
                         },
                     )
@@ -175,6 +175,7 @@ fun RootProfileConfig(
             onProfileChange(
                 profile.copy(
                     context = domain,
+                    rules = rules,
                     rootUseDefault = false
                 )
             )
@@ -190,7 +191,14 @@ fun GroupsPanel(selected: List<Groups>, closeSelection: (selection: Set<Groups>)
     var showDialog by remember { mutableStateOf(false) }
 
     if (showDialog) {
-        val groups = Groups.values()
+        val groups = Groups.values().sortedWith(compareBy<Groups> {
+            when (it) {
+                Groups.ROOT -> 0
+                Groups.SYSTEM -> 1
+                Groups.SHELL -> 2
+                else -> Int.MAX_VALUE
+            }
+        }.then(compareBy { it.name }))
         val options = groups.map { value ->
             ListOption(
                 titleText = value.display,
@@ -256,7 +264,7 @@ fun CapsPanel(
     var showDialog by remember { mutableStateOf(false) }
 
     if (showDialog) {
-        val caps = Capabilities.values()
+        val caps = Capabilities.values().sortedBy { it.name }
         val options = caps.map { value ->
             ListOption(
                 titleText = value.display,
@@ -357,11 +365,14 @@ private fun UidPanel(uid: Int, label: String, onUidChange: (Int) -> Unit) {
 }
 
 @Composable
-private fun SELinuxPanel(profile: Natives.Profile, onSELinuxChange: (domain: String, rules: String) -> Unit) {
+private fun SELinuxPanel(
+    profile: Natives.Profile,
+    onSELinuxChange: (domain: String, rules: String) -> Unit
+) {
     var showDialog by remember { mutableStateOf(false) }
     if (showDialog) {
         var domain by remember { mutableStateOf(profile.context) }
-        var rules by remember { mutableStateOf("") }
+        var rules by remember { mutableStateOf(profile.rules) }
 
         val inputOptions = listOf(
             InputTextField(
@@ -382,7 +393,7 @@ private fun SELinuxPanel(profile: Natives.Profile, onSELinuxChange: (domain: Str
                     // value can be a-zA-Z0-9_
                     val regex = Regex("^[a-z_]+:[a-z0-9_]+:[a-z0-9_]+(:[a-z0-9_]+)?$")
                     if (value?.matches(regex) == true) ValidationResult.Valid
-                    else ValidationResult.Invalid("Domain must be valid sepolicy")
+                    else ValidationResult.Invalid("Domain must be in the format of \"user:role:type:level\"")
                 }
             ),
             InputTextField(
@@ -393,7 +404,6 @@ private fun SELinuxPanel(profile: Natives.Profile, onSELinuxChange: (domain: Str
                 type = InputTextFieldType.OUTLINED,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Done
                 ),
                 singleLine = false,
                 resultListener = {
@@ -401,8 +411,8 @@ private fun SELinuxPanel(profile: Natives.Profile, onSELinuxChange: (domain: Str
                 },
                 validationListener = { value ->
                     if (isSepolicyValid(value)) ValidationResult.Valid
-                    else ValidationResult.Invalid("Rules must be valid sepolicy")
-                },
+                    else ValidationResult.Invalid("SELinux rules is invalid!")
+                }
             )
         )
 
